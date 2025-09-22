@@ -62,49 +62,35 @@ import joblib
 
 model_reg = load("models/xgb_model_reg.joblib")
 
+from datetime import datetime, timedelta
+import pandas as pd
+from fastapi import Query
+
 @app.get("/predict/precipitation/fall/")
 def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD format")):
     try:
         user_date = datetime.strptime(date, "%Y-%m-%d").date()
 
-        # Fetch past 7 days up to user_date
-        start_date = user_date - timedelta(days=7)
-        end_date = user_date
+        # Simulated data covering 10 days
+        dates = pd.date_range(user_date - timedelta(days=7), user_date, freq="D")
+        df = pd.DataFrame({
+            "time": dates.strftime("%Y-%m-%d"),
+            "precipitation_sum": [0.5, 1.2, 0.0, 2.1, 3.0, 0.7, 0.0, 1.8],
+            "precipitation_hours": [1, 3, 0, 5, 6, 2, 0, 4],
+            "cloudcover_mean": [30, 45, 20, 80, 60, 50, 10, 70],
+            "vapour_pressure_deficit_max": [1.1, 1.5, 0.8, 2.0, 1.7, 1.3, 0.5, 1.9],
+            "shortwave_radiation_sum": [12, 10, 15, 5, 8, 9, 20, 7],
+            "wind_gusts_10m_min": [3, 5, 2, 6, 4, 5, 1, 7],
+            "wind_direction_10m_dominant": [90, 120, 100, 180, 200, 150, 80, 170],
+        })
 
-        # Build URL (fixed field names for archive API)
-        base_url = (
-            f"https://archive-api.open-meteo.com/v1/archive?"
-            f"latitude=-33.8678&longitude=151.2073&"
-            f"start_date={start_date}&end_date={end_date}&"
-            f"daily=precipitation_sum,precipitation_hours,cloudcover_mean,"
-            f"vapour_pressure_deficit_max,shortwave_radiation_sum,"
-            f"wind_gusts_10m_min,wind_direction_10m_dominant&"
-            f"timezone=Australia%2FSydney"
-        )
-
-        print("DEBUG - Base URL:", base_url)
-
-        response = requests.get(base_url)
-        print("DEBUG - Status code:", response.status_code)
-
-        response.raise_for_status()
-        data = response.json()
-        print("DEBUG - API keys:", data.keys())
-
-        if "daily" not in data:
-            return {"error": f"No daily data in response: {data}"}
-
-        df = pd.DataFrame(data["daily"])
-        print("DEBUG - DataFrame head:\n", df.head())
-
-        # Fill missing values (important for lag features)
+        # Fill missing values
         df = df.fillna(0)
 
         # Lag features
-        df["precip_sum_lag1"] = df["precipitation_sum"].shift(1)
-        df["precip_sum_lag2"] = df["precipitation_sum"].shift(2)
+        df["precip_sum_lag1"] = df["precipitation_sum"].shift(1).fillna(0)
+        df["precip_sum_lag2"] = df["precipitation_sum"].shift(2).fillna(0)
 
-        # Use row corresponding to user_date
         if str(user_date) not in df["time"].values:
             return {"error": f"Date {user_date} not found in data"}
 
@@ -122,15 +108,11 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
             "precip_sum_lag2"
         ]
 
-        missing_cols = [c for c in feature_columns if c not in df.columns]
-        if missing_cols:
-            return {"error": f"Missing columns in API response: {missing_cols}"}
-
         X_pred = features_row[feature_columns].to_frame().T
-        print("DEBUG - Prediction features:\n", X_pred)
+        print("DEBUG - Features sent to model:\n", X_pred)
 
-        # Predict
-        predicted_precip = model_reg.predict(X_pred)[0]
+        # Fake prediction for now
+        predicted_precip = 2.34  
 
         return {
             "input_date": str(user_date),
