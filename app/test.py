@@ -1,8 +1,17 @@
-from fastapi import FastAPI
 from starlette.responses import JSONResponse
 from joblib import load
 import pandas as pd
+import numpy as np
 
+from fastapi import FastAPI, Query
+from datetime import datetime, timedelta
+import pandas as pd
+import openmeteo_requests
+import requests_cache
+from retry_requests import retry
+
+import requests
+import joblib
 
 app = FastAPI()
 
@@ -50,69 +59,125 @@ def read_root():
 
 @app.get('/health', status_code=200)
 def healthcheck():
-    return 'Weather prediciton is all ready to go!'
+    return 'Weather prediction is all ready to go!'
 
 # Load model once at startup
-
-from fastapi import FastAPI, Query
-from datetime import datetime, timedelta
-import pandas as pd
-import requests
-import joblib
-
 model_reg = load("models/xgb_model_reg.joblib")
+model_clf = load("models/xgb_model_clf.joblib")
 
-from datetime import datetime, timedelta
-import pandas as pd
-from fastapi import Query
+# Setup Open-Meteo client with cache + retries
+cache_session = requests_cache.CachedSession('.cache', expire_after=-1)
+retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+openmeteo = openmeteo_requests.Client(session=retry_session)
+
+
+ARCHIVE_START = datetime(1940, 1, 1).date()
+FORECAST_END = datetime.today().date() - timedelta(days=1)
+
 
 @app.get("/predict/precipitation/fall/")
 def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD format")):
     try:
+        # Parse input date
         user_date = datetime.strptime(date, "%Y-%m-%d").date()
 
-        # Simulated data covering 10 days
-        dates = pd.date_range(user_date - timedelta(days=7), user_date, freq="D")
-        df = pd.DataFrame({
-            "time": dates.strftime("%Y-%m-%d"),
-            "precipitation_sum": [0.5, 1.2, 0.0, 2.1, 3.0, 0.7, 0.0, 1.8],
-            "precipitation_hours": [1, 3, 0, 5, 6, 2, 0, 4],
-            "cloudcover_mean": [30, 45, 20, 80, 60, 50, 10, 70],
-            "vapour_pressure_deficit_max": [1.1, 1.5, 0.8, 2.0, 1.7, 1.3, 0.5, 1.9],
-            "shortwave_radiation_sum": [12, 10, 15, 5, 8, 9, 20, 7],
-            "wind_gusts_10m_min": [3, 5, 2, 6, 4, 5, 1, 7],
-            "wind_direction_10m_dominant": [90, 120, 100, 180, 200, 150, 80, 170],
-        })
+        
+        if user_date < ARCHIVE_START or user_date > FORECAST_END:
+            return {
+                "error": f"Date {user_date} is out of allowed range. "
+                         f"Please use a date between {ARCHIVE_START} and {FORECAST_END}."
+            }
+        
+        # Fetch past 7 days up to user_date
+        start_date = user_date - timedelta(days=6)
+        end_date = user_date + timedelta(days=1)
+
+        # Open-Meteo request parameters
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": -33.8678,
+            "longitude": 151.2073,
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "daily": [
+                "precipitation_sum",
+                "precipitation_hours",
+                "cloud_cover_mean",
+                "vapour_pressure_deficit_max",
+                "shortwave_radiation_sum",
+                "wind_gusts_10m_min",
+                "wind_direction_10m_dominant"
+            ],
+            "timezone": "Australia/Sydney",
+        }
+
+        # Get response
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # Extract daily data
+        daily = response.Daily()
+        daily_data = {
+            "time": pd.date_range(
+                start=pd.to_datetime(daily.Time(), unit="s", utc=True),
+                end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
+                freq=pd.Timedelta(seconds=daily.Interval()),
+                inclusive="left"
+            ),
+            "precipitation_sum": daily.Variables(0).ValuesAsNumpy(),
+            "precipitation_hours": daily.Variables(1).ValuesAsNumpy(),
+            "cloud_cover_mean": daily.Variables(2).ValuesAsNumpy(),
+            "vapour_pressure_deficit_max": daily.Variables(3).ValuesAsNumpy(),
+            "shortwave_radiation_sum": daily.Variables(4).ValuesAsNumpy(),
+            "wind_gusts_10m_min": daily.Variables(5).ValuesAsNumpy(),
+            "wind_direction_10m_dominant": daily.Variables(6).ValuesAsNumpy(),
+        }
+
+        df = pd.DataFrame(data=daily_data)
 
         # Fill missing values
         df = df.fillna(0)
 
-        # Lag features
+        # Ensure API columns are numeric first
+        api_cols = [
+            "precipitation_sum",
+            "precipitation_hours",
+            "cloud_cover_mean",
+            "vapour_pressure_deficit_max",
+            "shortwave_radiation_sum",
+            "wind_gusts_10m_min",
+            "wind_direction_10m_dominant"
+        ]
+        df[api_cols] = df[api_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+        # Now create lag features
         df["precip_sum_lag1"] = df["precipitation_sum"].shift(1).fillna(0)
         df["precip_sum_lag2"] = df["precipitation_sum"].shift(2).fillna(0)
 
-        if str(user_date) not in df["time"].values:
-            return {"error": f"Date {user_date} not found in data"}
+        # Ensure all feature columns are float
+        numeric_cols = api_cols + ["precip_sum_lag1", "precip_sum_lag2"]
+        df[numeric_cols] = df[numeric_cols].astype(float)
 
-        features_row = df[df["time"] == str(user_date)].iloc[0]
 
-        feature_columns = [
-            "precipitation_sum",
-            "precipitation_hours",
-            "cloudcover_mean",
-            "vapour_pressure_deficit_max",
-            "wind_direction_10m_dominant",
-            "shortwave_radiation_sum",
-            "wind_gusts_10m_min",
-            "precip_sum_lag1",
-            "precip_sum_lag2"
-        ]
+        # Extract date part from timestamp
+        df["date_only"] = df["time"].dt.date
+        print(df["date_only"])
+        
+        # Check if user_date exists
+        if user_date not in df["date_only"].values:
+            return {"error": f"Date {user_date} not found in API data."}
 
-        X_pred = features_row[feature_columns].to_frame().T
-        print("DEBUG - Features sent to model:\n", X_pred)
+        # Select the row
+        features_row = df[df["date_only"] == user_date].iloc[0]
+        print(features_row)
+        
+        X_pred = features_row[numeric_cols].values.reshape(1, -1)
+        
+        # Predict
+        predicted_precip = model_reg.predict(X_pred)[0]
 
-        # Fake prediction for now
-        predicted_precip = 2.34  
+        # Prevent negative prediction
+        predicted_precip = max(0, predicted_precip) 
 
         return {
             "input_date": str(user_date),
@@ -124,7 +189,174 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
         }
 
     except ValueError:
-        return {"error": "Invalid date format. Use YYYY-MM-DD."}
+        return {
+            "error": (
+                f"Invalid date format: '{date}'. "
+                "Please provide the date in YYYY-MM-DD format, e.g., 2025-03-18."
+            )
+        }
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/predict/rain/")
+def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD format")):
+    try:
+        # Parse input date
+        user_date = datetime.strptime(date, "%Y-%m-%d").date()
+
+        
+        if user_date < ARCHIVE_START or user_date > FORECAST_END:
+            return {
+                "error": f"Date {user_date} is out of allowed range. "
+                         f"Please use a date between {ARCHIVE_START} and {FORECAST_END}."
+            }
+        
+        # Fetch past 7 days up to user_date
+        start_date = user_date - timedelta(days=6)
+        end_date = user_date + timedelta(days=1)
+
+        # Open-Meteo request parameters
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": -33.8678,
+            "longitude": 151.2073,
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "daily": [
+                "precipitation_sum",
+                "daylight_duration",
+                "relative_humidity_2m_mean",
+                "temperature_2m_max",
+                "apparent_temperature_mean",
+                "sunrise",
+                "sunset"
+            ],
+            "timezone": "Australia/Sydney",
+        }
+
+        # Get response
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # Extract daily data
+        daily = response.Daily()
+        daily_data = {
+            "time": pd.date_range(
+                start=pd.to_datetime(daily.Time(), unit="s", utc=True),
+                end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
+                freq=pd.Timedelta(seconds=daily.Interval()),
+                inclusive="left"
+            ),
+            "precipitation_sum": daily.Variables(0).ValuesAsNumpy(),
+            "daylight_duration": daily.Variables(1).ValuesAsNumpy(),
+            "relative_humidity_2m_mean": daily.Variables(2).ValuesAsNumpy(),
+            "temperature_2m_max": daily.Variables(3).ValuesAsNumpy(),
+            "apparent_temperature_mean": daily.Variables(4).ValuesAsNumpy(),
+            "sunrise": daily.Variables(5).ValuesInt64AsNumpy(),
+            "sunset": daily.Variables(6).ValuesInt64AsNumpy()
+        }
+
+        df = pd.DataFrame(data=daily_data)
+
+        # Endure API columns are numeric first
+        api_cols = [
+            'precipitation_sum',
+            'daylight_duration',
+            'relative_humidity_2m_mean',
+            'temperature_2m_max',
+            'apparent_temperature_mean',
+            'sunrise',
+            'sunset'
+        ]
+        df[api_cols] = df[api_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+        # Convert Unix timestamp to datetime
+        df['sunrise_dt'] = pd.to_datetime(df['sunrise'], unit='s')
+        df['sunset_dt'] = pd.to_datetime(df['sunset'], unit='s')
+
+        # Extract hour + minute as decimal
+        df['sunrise_hour'] = df['sunrise_dt'].dt.hour + df['sunrise_dt'].dt.minute/60
+        df['sunset_hour'] = df['sunset_dt'].dt.hour + df['sunset_dt'].dt.minute/60
+
+        # Precipitation Rolling Sum (7 days)
+        df['precip_7day_sum'] = df['precipitation_sum'].rolling(7).sum().shift(1)
+
+        # Humidity Rolling Mean (7 days)
+        df['rh_7day_mean'] = df['relative_humidity_2m_mean'].rolling(7).mean().shift(1)
+
+        # Extract year, month, and encode month cyclically
+        df["year"] = df["time"].dt.year
+        df["month"] = df["time"].dt.month
+
+        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
+        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
+
+        # Drop month column
+        df = df.drop(columns=["month", "sunrise", "sunset", "sunrise_dt", "sunset_dt"])
+
+        # Ensure all feature columns are float
+        features_list = [
+            'precip_7day_sum',
+            'daylight_duration',
+            'month_sin',
+            'month_cos',
+            'sunrise_hour',
+            'sunset_hour',
+            'rh_7day_mean',
+            'temperature_2m_max',
+            'year',
+            'apparent_temperature_mean'
+        ]
+
+        df[features_list] = df[features_list].astype(float)
+        print(df[features_list])
+
+        # Extract date part from timestamp
+        df["date_only"] = df["time"].dt.date
+
+        # Check if user_date exists
+        if user_date not in df["date_only"].values:
+            return {"error": f"Date {user_date} not found in API data."}
+
+        # Select the row
+        features_row = df[df["date_only"] == user_date].iloc[0]
+        print(features_row)
+
+        X_pred = features_row[features_list].values.reshape(1, -1)
+        X_pred = X_pred.astype(np.float32).reshape(1, -1)
+        
+        print(model_clf.get_booster().feature_names)
+        print(features_list)
+
+        predicted_class = model_clf.predict(X_pred)[0]
+        print("Predicted class:", predicted_class)
+
+        predicted_label = bool(int(predicted_class))
+
+        return {
+            "input_date": str(user_date),
+            "prediction": {
+                "date": str(user_date + timedelta(days=7)), 
+                "will_rain": predicted_label
+            }
+        }
+    except ValueError:
+        return {
+            "error": (
+                f"Invalid date format: '{date}'. "
+                "Please provide the date in YYYY-MM-DD format, e.g., 2025-03-18."
+            )
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+    
+        
+
+
+
+
+
+
+
 
