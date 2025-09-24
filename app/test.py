@@ -161,7 +161,6 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
 
         # Extract date part from timestamp
         df["date_only"] = df["time"].dt.date
-        print(df["date_only"])
         
         # Check if user_date exists
         if user_date not in df["date_only"].values:
@@ -169,7 +168,6 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
 
         # Select the row
         features_row = df[df["date_only"] == user_date].iloc[0]
-        print(features_row)
         
         X_pred = features_row[numeric_cols].values.reshape(1, -1)
         
@@ -309,7 +307,6 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
         ]
 
         df[features_list] = df[features_list].astype(float)
-        print(df[features_list])
 
         # Extract date part from timestamp
         df["date_only"] = df["time"].dt.date
@@ -320,16 +317,11 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
 
         # Select the row
         features_row = df[df["date_only"] == user_date].iloc[0]
-        print(features_row)
 
         X_pred = features_row[features_list].values.reshape(1, -1)
         X_pred = X_pred.astype(np.float32).reshape(1, -1)
-        
-        print(model_clf.get_booster().feature_names)
-        print(features_list)
 
         predicted_class = model_clf.predict(X_pred)[0]
-        print("Predicted class:", predicted_class)
 
         predicted_label = bool(int(predicted_class))
 
@@ -349,14 +341,3 @@ def predict_precipitation(date: str = Query(..., description="Date in YYYY-MM-DD
         }
     except Exception as e:
         return {"error": str(e)}
-
-    
-        
-
-
-
-
-
-
-
-
