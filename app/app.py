@@ -1,13 +1,14 @@
+# Import Packages
 import streamlit as st
 import requests
 from datetime import datetime, date, timedelta
 
-API_URL = "http://127.0.0.1:8000"  # replace with Render URL
+API_URL = "http://127.0.0.1:8000"  
 
 st.title("🌦️ Weather Forecast App")
 
 # Set the allowed date range
-min_date = date(1940, 1, 1)
+min_date = date(1940, 1, 7)
 max_date = datetime.today().date() - timedelta(days=1)  # yesterday
 
 # Calendar input with restricted range

@@ -1,24 +1,24 @@
-from starlette.responses import JSONResponse
-from joblib import load
+## Import Packages
+# Standard library imports
+from datetime import datetime, timedelta
+
+# Third-party imports
 import pandas as pd
 import numpy as np
-
-from fastapi import FastAPI, Query
-from datetime import datetime, timedelta
-import pandas as pd
-import openmeteo_requests
-import requests_cache
-from retry_requests import retry
-
 import requests
+import requests_cache
+from fastapi import FastAPI, Query
+from starlette.responses import JSONResponse
+
+# Local or custom modules
+import openmeteo_requests
+from retry_requests import retry
 import joblib
+from joblib import load
 
 app = FastAPI()
 
-from datetime import datetime, timedelta
-import pandas as pd
-
-ARCHIVE_START = datetime(1940, 1, 1).date()
+ARCHIVE_START = datetime(1940, 1, 7).date()
 FORECAST_END = datetime.today().date() - timedelta(days=1)
 
 
@@ -31,7 +31,7 @@ def validate_date(date_str: str) -> datetime.date:
         raise ValueError(f"Invalid date format: '{date_str}'. Use YYYY-MM-DD.")
     
     if user_date < ARCHIVE_START or user_date > FORECAST_END:
-        raise ValueError(f"Date {user_date} out of range ({ARCHIVE_START} → {FORECAST_END})")
+        raise ValueError(f"Date {user_date} out of range. Choose between {ARCHIVE_START} and {FORECAST_END}")
     
     return user_date
 
@@ -45,7 +45,7 @@ def fetch_openmeteo_data(url: str, params: dict) -> pd.DataFrame:
     for i, var in enumerate(params["daily"]):
         try:
             daily_data[var] = daily.Variables(i).ValuesAsNumpy()
-        except AttributeError:  # Some variables may need Int64
+        except AttributeError:  
             daily_data[var] = daily.Variables(i).ValuesInt64AsNumpy()
     
     daily_data["time"] = pd.date_range(
@@ -91,14 +91,11 @@ def predict_from_model(df: pd.DataFrame, features: list, model, user_date: datet
     X_pred = features_row[features].values.reshape(1, -1)
     return model.predict(X_pred)[0]
 
-
-# Load the models
-
 @app.get("/")
 def read_root():
     return {
         "Project" : "Weather Forecast",
-        "Objectives" : "Predict precipitation sum of next 3 days / raining or not next 7th day.",
+        "Objectives" : "Predict the precipitation sum over the next 3 days to support weather-dependent decision-making, and forecast whether it will rain on the 7th day to help plan operations and minimise weather-related risks.",
         "endpoints" : {
 
             "/": "Project overview, endpoints, input/output formats, and GitHub repo",
@@ -192,9 +189,8 @@ RAIN_FEATURES = [
     'sunrise_hour',
     'sunset_hour',
     'rh_7day_mean',
-    'temperature_2m_max',
-    'year',
-    'apparent_temperature_mean'
+    'apparent_temperature_mean',
+    'year'
 ]
 
 
@@ -214,7 +210,6 @@ def predict_rain_endpoint(date: str = Query(..., description="Date in YYYY-MM-DD
                 "precipitation_sum",
                 "daylight_duration",
                 "relative_humidity_2m_mean",
-                "temperature_2m_max",
                 "apparent_temperature_mean",
                 "sunrise",
                 "sunset"
@@ -231,7 +226,7 @@ def predict_rain_endpoint(date: str = Query(..., description="Date in YYYY-MM-DD
 
         # Predict using model
         predicted_class = predict_from_model(df, RAIN_FEATURES, model_clf, user_date)
-        predicted_label = bool(int(predicted_class))
+        predicted_label = str(bool(int(predicted_class))).upper() # All Caps
 
         return {
             "input_date": str(user_date),
