@@ -40,8 +40,8 @@ The models are trained in a separate repository: [Training Models Repository](ht
 
 1. **Clone the repository:**
 ```bash
-git clone <this_repo_url>
-cd <this_repo_folder>
+git clone https://github.com/Shawynot33/adv_mla_at2_api/
+cd adv_mla_at2_api
 ```
 2. **Install dependencies:**
 
