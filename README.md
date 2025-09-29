@@ -17,17 +17,24 @@ The models are trained in a separate repository: [Training Models Repository](ht
 
 
 ## Repository Structure
-- `app/` – FastAPI application files  
-- `models/` – Saved trained XGBoost models  
-- `.DS_Store`  
-- `.cache.sqlite`  
-- `.python-version`  
-- `Dockerfile` – Docker configuration for deployment  
-- `github.txt`  
-- `poetry.lock` – Poetry dependency lock file  
-- `pyproject.toml` – Poetry configuration  
-- `requirements.txt` – Python dependencies  
-
+```
+├── app/                        
+│   ├── app.py           <- FastAPI routes and user interaction  
+│   └── main.py          <- Functions handling API logic and responses  
+│
+├── models/                  
+│   ├── xgb_model_clf    <- Saved XGBoost classification model (rain occurrence 7 days ahead)  
+│   └── xgb_model_reg    <- Saved XGBoost regression model (precipitation sum next 3 days)  
+│
+├── .DS_Store  
+├── .cache.sqlite  
+├── .python-version  
+├── Dockerfile           <- Docker configuration for deployment  
+├── github.txt  
+├── poetry.lock          <- Poetry dependency lock file  
+├── pyproject.toml       <- Poetry configuration  
+└── requirements.txt     <- Python dependencies  
+```
 
 ## Installation & Setup
 
