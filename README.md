@@ -40,7 +40,7 @@ The models are trained in a separate repository: [Training Models Repository](ht
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/Shawynot33/adv_mla_at2_api/
+git clone https://github.com/Shawynot33/precipitation_forecast_api/
 cd adv_mla_at2_api
 ```
 2. **Install dependencies:**
@@ -64,7 +64,7 @@ The API provides several endpoints to interact with the trained precipitation mo
 
 
 ### `/`  (GET)
-Displays a brief description of the project objectives, lists available endpoints, expected input parameters, output format, and a link to the [training models repository](https://github.com/Shawynot33/adv_mla_at2).
+Displays a brief description of the project objectives, lists available endpoints, expected input parameters, output format, and a link to the [training models repository](https://github.com/Shawynot33/precipitation_forecast).
 
 
 ### `/health/`  (GET)
