@@ -1,19 +1,20 @@
 # Precipitation Forecasting API
-
-This repository contains the **API backend** for predicting precipitation using XGBoost models. The API provides forecasts for:  
-1. **Precipitation sum over the next three days** (regression)  
-2. **Rain occurrence seven days ahead** (classification)  
-
-The models are trained in a separate repository: [Training Models Repository](https://github.com/Shawynot33/adv_mla_at2).
-
-
-## Features
-
-- Predict precipitation sums (next 3 days)  
-- Predict rain occurrence (7 days ahead)  
-- Deployed via FastAPI, containerised with Docker, and hosted on **Render**: https://adv-mla-at2-25552249.onrender.com   
-- Provides real-time access to predictions for weather-dependent operations  
-
+ 
+A deployed REST API serving two XGBoost weather models — predicting 3-day cumulative precipitation and 7-day rain occurrence, containerised with Docker and live on Render.
+ 
+**Live API:** https://adv-mla-at2-25552249.onrender.com
+ 
+**Model training repository:** [adv_mla_at2](https://github.com/Shawynot33/adv_mla_at2)
+ 
+ 
+## Overview
+ 
+This repository contains the API backend for two precipitation forecasting tasks:
+ 
+1. **Precipitation sum over the next three days** (regression)
+2. **Rain occurrence seven days ahead** (classification)
+ 
+Real-time weather inputs are retrieved via the [Open-Meteo API](https://open-meteo.com/), enabling live predictions without manual data entry.
 
 
 ## Repository Structure
@@ -73,54 +74,43 @@ The workflow diagram below illustrates the process:
  
 > ROC-AUC of 0.668 vs. a 0.500 random baseline reflects meaningful discriminative ability. F1 is sensitive to class imbalance in rain occurrence data and threshold selection.
 
-## Installation & Setup
 
-1. **Clone the repository:**
-```bash
-git clone https://github.com/Shawynot33/precipitation_forecast_api/
-cd adv_mla_at2_api
-```
-2. **Install dependencies:**
-
-```bash
-# Using Poetry
-poetry install
-
-# Or using pip
-pip install -r requirements.txt
-```
-
-3. **Run the API locally:**
-```bash
-uvicorn app.main:app --reload
-```
-
-## API Endpoints and Usage
-
-The API provides several endpoints to interact with the trained precipitation models. All endpoints are accessed via **GET** requests.
-
-
-### `/`  (GET)
-Displays a brief description of the project objectives, lists available endpoints, expected input parameters, output format, and a link to the [training models repository](https://github.com/Shawynot33/precipitation_forecast).
-
-
-### `/health/`  (GET)
-Returns a status code `200` along with a welcome message.
-
-### `/predict/rain/`  (GET)
-Returns the prediction of whether it will rain exactly **7 days** after the input date.  
-
-**Input Parameters:**
-- `date`: Date from which the model will predict rain. Format: `YYYY-MM-DD`.  
-
-**Example Request:**
+## Deployment
+ 
+The model was deployed using a structured pipeline: **Poetry** manages dependencies for a consistent environment, the application is built with **FastAPI** and pushed to **GitHub**, containerised as a **Docker** image, and served as a web service on **Render**.
+ 
+![Deployment Workflow](assets/precip_deploy.png)
+ 
+**Future improvements:**
+- CI/CD pipelines for automated testing and redeployment
+- Logging and monitoring tools to track prediction quality over time
+- Cloud-based scaling for higher-demand scenarios
+- Scheduled retraining as weather patterns evolve
+ 
+---
+ 
+## API Endpoints
+ 
+All endpoints are accessed via **GET** requests.
+ 
+### `GET /`
+Displays project objectives, available endpoints, expected inputs, output format, and a link to the training repository.
+ 
+### `GET /health/`
+Returns status code `200` with a welcome message.
+ 
+### `GET /predict/rain/`
+Returns whether it will rain exactly **7 days** after the input date.
+ 
+**Parameters:**
+- `date` — format: `YYYY-MM-DD`
+ 
+**Example request:**
 ```json
-{
-  "date": "2023-01-01"
-}
+{ "date": "2023-01-01" }
 ```
-
-**Example Response**
+ 
+**Example response:**
 ```json
 {
   "input_date": "2023-01-01",
@@ -130,22 +120,20 @@ Returns the prediction of whether it will rain exactly **7 days** after the inpu
   }
 }
 ```
-
-### `/predict/precipitation/fall/`  (GET)
-Returns the **cumulative precipitation sum** over the next **3 days** from the input date.
-
-**Input Parameters:**
-- `date`: Date from which the model will predict precipitation. Format: `YYYY-MM-DD`.
-
-**Example Request:**
+ 
+### `GET /predict/precipitation/fall/`
+Returns the cumulative precipitation sum over the **next 3 days** from the input date.
+ 
+**Parameters:**
+- `date` — format: `YYYY-MM-DD`
+ 
+**Example request:**
 ```json
-{
-  "date": "2023-01-01"
-}
+{ "date": "2023-01-01" }
 ```
-
-**Example Response:**
-```
+ 
+**Example response:**
+```json
 {
   "input_date": "2023-01-01",
   "prediction": {
@@ -154,4 +142,28 @@ Returns the **cumulative precipitation sum** over the next **3 days** from the i
     "precipitation_fall": 28.2
   }
 }
+```
+ 
+---
+ 
+## Installation & Setup
+ 
+1. **Clone the repository:**
+```bash
+git clone https://github.com/Shawynot33/precipitation_forecast_api/
+cd adv_mla_at2_api
+```
+ 
+2. **Install dependencies:**
+```bash
+# Using Poetry
+poetry install
+ 
+# Or using pip
+pip install -r requirements.txt
+```
+ 
+3. **Run the API locally:**
+```bash
+uvicorn app.main:app --reload
 ```
