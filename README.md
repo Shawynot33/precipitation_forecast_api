@@ -36,6 +36,43 @@ The models are trained in a separate repository: [Training Models Repository](ht
 └── requirements.txt     <- Python dependencies  
 ```
 
+## Modelling Approach
+ 
+Both models were trained using **XGBoost** — chosen for its strong performance on tabular data and flexibility for both regression and classification tasks.
+ 
+**Training pipeline:**
+- Time-series split (N=5) applied to preserve temporal ordering across folds, ensuring validation sets simulate future unseen data
+- Hyperparameter tuning via **Hyperopt** (Bayesian optimisation, 50 iterations), minimising average validation loss across all folds
+- Best parameters used to refit on the full training set, with final evaluation on a held-out **2024 test set**
+ 
+The workflow diagram below illustrates the process:
+ 
+![Modelling Workflow](assets/precip_diagram.png)
+ 
+ 
+## Model Performance
+ 
+### Regression: 3-Day Precipitation Sum
+ 
+| Metric | Validation | Test | Baseline |
+|--------|------------|------|----------|
+| RMSE   | 14.15      | 13.98 | 14.83   |
+| MAE    | 7.25       | 8.18  | 8.97    |
+| R²     | —          | 0.10  | -0.01   |
+ 
+> Precipitation forecasting is inherently high-variance. RMSE and MAE improvements over the mean baseline are the most meaningful indicators of model utility here.
+ 
+### Classification: 7-Day Rain Occurrence
+ 
+| Metric       | Validation | Test  | Baseline |
+|--------------|------------|-------|----------|
+| F1-score     | 0.725      | 0.660 | 0.763    |
+| Weighted F1  | —          | 0.630 | 0.471    |
+| Accuracy     | —          | 0.603 | 0.617    |
+| ROC-AUC      | 0.635      | 0.668 | 0.500    |
+ 
+> ROC-AUC of 0.668 vs. a 0.500 random baseline reflects meaningful discriminative ability. F1 is sensitive to class imbalance in rain occurrence data and threshold selection.
+
 ## Installation & Setup
 
 1. **Clone the repository:**
